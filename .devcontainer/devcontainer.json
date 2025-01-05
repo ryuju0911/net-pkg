@@ -1,16 +1,16 @@
 // For format details, see https://aka.ms/devcontainer.json. For config options, see the
 // README at: https://github.com/devcontainers/templates/tree/main/src/alpine
 {
-	"name": "net-pkg",
+	"name": "http-pkg",
 	"build": {
 		"dockerfile": "Dockerfile"
 	},
 	"runArgs": [
-		"--name=net-pkg"
+		"--name=http-pkg"
   	],
 	"privileged": true,
-	"workspaceFolder": "/usr/local/go/src/net",
-	"workspaceMount": "source=${localWorkspaceFolder},target=/usr/local/go/src/net,type=bind"
+	"workspaceFolder": "/usr/local/go/src/net/http",
+	"workspaceMount": "source=${localWorkspaceFolder},target=/usr/local/go/src/net/http,type=bind"
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},
