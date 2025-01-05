@@ -6,6 +6,11 @@
 
 package http
 
+import (
+	"errors"
+	"fmt"
+)
+
 // A Handler responds to an HTTP request.
 //
 // [Handler.ServeHTTP] should write reply headers and data to the [ResponseWriter]
@@ -170,14 +175,6 @@ func (f HandlerFunc) ServeHTTP(w ResponseWriter, r *Request) {
 //     See https://go.dev/issue/21955 for details.
 type ServeMux struct{}
 
-// A Request represents an HTTP request received by a server
-// or to be sent by a client.
-//
-// The field semantics differ slightly between client and server
-// usage. In addition to the notes on the fields below, see the
-// documentation for [Request.Write] and [RoundTripper].
-type Request struct{}
-
 // DefaultServeMux is the default [ServeMux] used by [Serve].
 var DefaultServeMux = &defaultServeMux
 
@@ -189,6 +186,29 @@ func HandleFunc(pattern string, handler func(ResponseWriter, *Request)) {
 	DefaultServeMux.register(pattern, HandlerFunc(handler))
 }
 
-// TODO: https://github.com/ryuju0911/net-pkg/issues/5
-// - Implement handler registration logic.
-func (mux *ServeMux) register(pattern string, handler Handler) {}
+func (mux *ServeMux) register(pattern string, handler Handler) {
+	if err := mux.registerErr(pattern, handler); err != nil {
+		panic(err)
+	}
+}
+
+func (mux *ServeMux) registerErr(patstr string, handler Handler) error {
+	if patstr == "" {
+		return errors.New("http: invalid pattern")
+	}
+	if handler == nil {
+		return errors.New("http: nil handler")
+	}
+	if f, ok := handler.(HandlerFunc); ok && f == nil {
+		return errors.New("http: nil handler")
+	}
+
+	_, err := parsePattern(patstr)
+	if err != nil {
+		return fmt.Errorf("parsing %q: %w", patstr, err)
+	}
+
+	// TODO: https://github.com/ryuju0911/http-pkg/issues/5
+	// - Implement handler registration logic.
+	return nil
+}
