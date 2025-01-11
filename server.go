@@ -9,6 +9,8 @@ package http
 import (
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 )
 
 // A Handler responds to an HTTP request.
@@ -179,6 +181,28 @@ type ServeMux struct{}
 var DefaultServeMux = &defaultServeMux
 
 var defaultServeMux ServeMux
+
+// cleanPath returns the canonical path for p, eliminating . and .. elements.
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	np := path.Clean(p)
+	// path.Clean removes trailing slash except for root;
+	// put the trailing slash back if necessary.
+	if p[len(p)-1] == '/' && np != "/" {
+		// Fast path for common case of p being the string we want:
+		if len(p) == len(np)+1 && strings.HasPrefix(p, np) {
+			np = p
+		} else {
+			np += "/"
+		}
+	}
+	return np
+}
 
 // HandleFunc registers the handler function for the given pattern in [DefaultServeMux].
 // The documentation for [ServeMux] explains how patterns are matched.
