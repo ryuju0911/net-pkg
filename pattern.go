@@ -9,6 +9,7 @@ package http
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -18,6 +19,41 @@ type pattern struct {
 	str    string // original string
 	method string
 	host   string
+	// The representation of a path differs from the surface syntax, which
+	// simplifies most algorithms.
+	//
+	// Paths ending in '/' are represented with an anonymous "..." wildcard.
+	// For example, the path "a/" is represented as a literal segment "a" followed
+	// by a segment with multi==true.
+	//
+	// Paths ending in "{$}" are represented with the literal segment "/".
+	// For example, the path "a/{$}" is represented as a literal segment "a" followed
+	// by a literal segment "/".
+	segments []segment
+}
+
+// A segment is a pattern piece that matches one or more path segments, or
+// a trailing slash.
+//
+// If wild is false, it matches a literal segment, or, if s == "/", a trailing slash.
+// Examples:
+//
+//	"a" => segment{s: "a"}
+//	"/{$}" => segment{s: "/"}
+//
+// If wild is true and multi is false, it matches a single path segment.
+// Example:
+//
+//	"{x}" => segment{s: "x", wild: true}
+//
+// If both wild and multi are true, it matches all remaining path segments.
+// Example:
+//
+//	"{rest...}" => segment{s: "rest", wild: true, multi: true}
+type segment struct {
+	s     string // literal or wildcard name or "/" for "/{$}".
+	wild  bool
+	multi bool // "..." wildcard
 }
 
 // parsePattern parses a string into a Pattern.
@@ -77,7 +113,44 @@ func parsePattern(s string) (_ *pattern, err error) {
 	// At this point, rest is the path.
 	off += i
 
-	// TODO: https://github.com/ryuju0911/http-pkg/issues/8
-	// - Parse path to get slash-separated segments.
+	// An unclean path with a method that is not CONNECT can never match,
+	// because paths are cleaned before matching.
+	if method != "" && method != "CONNECT" && rest != cleanPath(rest) {
+		return nil, errors.New("non-CONNECT pattern with unclean path can never match")
+	}
+
+	for len(rest) > 0 {
+		// Invariant: rest[0] == '/'.
+		rest = rest[1:]
+		off = len(s) - len(rest)
+		if len(rest) == 0 {
+			// Trailing slash.
+			p.segments = append(p.segments, segment{wild: true, multi: true})
+			break
+		}
+		i := strings.IndexByte(rest, '/')
+		if i < 0 {
+			i = len(rest)
+		}
+		var seg string
+		seg, rest = rest[:i], rest[i:]
+		if i := strings.IndexByte(seg, '{'); i < 0 {
+			// Literal.
+			seg = pathUnescape(seg)
+			p.segments = append(p.segments, segment{s: seg})
+		} else {
+			// TODO: https://github.com/ryuju0911/http-pkg/issues/10
+			// - Handle wildcard when parsing pattern.
+		}
+	}
 	return p, nil
+}
+
+func pathUnescape(path string) string {
+	u, err := url.PathUnescape(path)
+	if err != nil {
+		// Invalidly escaped path; use the original
+		return path
+	}
+	return u
 }
