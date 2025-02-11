@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 )
 
 // A pattern is something that can be matched against an HTTP request.
@@ -119,6 +120,7 @@ func parsePattern(s string) (_ *pattern, err error) {
 		return nil, errors.New("non-CONNECT pattern with unclean path can never match")
 	}
 
+	seenNames := map[string]bool{} // remember wildcard names to catch dups
 	for len(rest) > 0 {
 		// Invariant: rest[0] == '/'.
 		rest = rest[1:]
@@ -139,11 +141,52 @@ func parsePattern(s string) (_ *pattern, err error) {
 			seg = pathUnescape(seg)
 			p.segments = append(p.segments, segment{s: seg})
 		} else {
-			// TODO: https://github.com/ryuju0911/http-pkg/issues/10
-			// - Handle wildcard when parsing pattern.
+			// Wildcard.
+			if i != 0 {
+				return nil, errors.New("bad wildcard segment (must start with '{')")
+			}
+			if seg[len(seg)-1] != '}' {
+				return nil, errors.New("bad wildcard segment (must end with '}')")
+			}
+			name := seg[1 : len(seg)-1]
+			if name == "$" {
+				if len(rest) != 0 {
+					return nil, errors.New("{$} not at end")
+				}
+				p.segments = append(p.segments, segment{s: "/"})
+				break
+			}
+			name, multi := strings.CutSuffix(name, "...")
+			if multi && len(rest) != 0 {
+				return nil, errors.New("{...} wildcard not at end")
+			}
+			if name == "" {
+				return nil, errors.New("empty wildcard")
+			}
+			if !isValidWildcardName(name) {
+				return nil, fmt.Errorf("bad wildcard name %q", name)
+			}
+			if seenNames[name] {
+				return nil, fmt.Errorf("duplicate wildcard name %q", name)
+			}
+			seenNames[name] = true
+			p.segments = append(p.segments, segment{s: name, wild: true, multi: multi})
 		}
 	}
 	return p, nil
+}
+
+func isValidWildcardName(s string) bool {
+	if s == "" {
+		return false
+	}
+	// Valid Go identifier.
+	for i, c := range s {
+		if !unicode.IsLetter(c) && c != '_' && (i == 0 || !unicode.IsDigit(c)) {
+			return false
+		}
+	}
+	return true
 }
 
 func pathUnescape(path string) string {

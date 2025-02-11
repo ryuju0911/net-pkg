@@ -39,6 +39,18 @@ func TestParsePattern(t *testing.T) {
 			lit("path"), lit("to"), lit("something"),
 		}}},
 		{
+			"/{w1}/lit/{w2}",
+			pattern{
+				segments: []segment{wild("w1"), lit("lit"), wild("w2")},
+			},
+		},
+		{
+			"/{w1}/lit/{w2}/",
+			pattern{
+				segments: []segment{wild("w1"), lit("lit"), wild("w2"), multi("")},
+			},
+		},
+		{
 			"example.com/",
 			pattern{host: "example.com", segments: []segment{multi("")}},
 		},
@@ -51,8 +63,24 @@ func TestParsePattern(t *testing.T) {
 			pattern{
 				method:   "POST",
 				host:     "example.com",
-				segments: []segment{lit("foo")},
+				segments: []segment{lit("foo"), wild("w")},
 			},
+		},
+		{
+			"/{$}",
+			pattern{segments: []segment{lit("/")}},
+		},
+		{
+			"DELETE example.com/a/{foo12}/{$}",
+			pattern{method: "DELETE", host: "example.com", segments: []segment{lit("a"), wild("foo12"), lit("/")}},
+		},
+		{
+			"/foo/{$}",
+			pattern{segments: []segment{lit("foo"), lit("/")}},
+		},
+		{
+			"/{a}/foo/{rest...}",
+			pattern{segments: []segment{wild("a"), lit("foo"), multi("rest")}},
 		},
 		{
 			"//",
@@ -75,6 +103,18 @@ func TestParsePattern(t *testing.T) {
 			"GET\t  /",
 			pattern{method: "GET", segments: []segment{multi("")}},
 		},
+		{
+			"POST \t  example.com/foo/{w}",
+			pattern{
+				method:   "POST",
+				host:     "example.com",
+				segments: []segment{lit("foo"), wild("w")},
+			},
+		},
+		{
+			"DELETE    \texample.com/a/{foo12}/{$}",
+			pattern{method: "DELETE", host: "example.com", segments: []segment{lit("a"), wild("foo12"), lit("/")}},
+		},
 	} {
 		got := mustParsePattern(t, test.in)
 		if !got.equal(&test.want) {
@@ -91,7 +131,23 @@ func TestParsePatternError(t *testing.T) {
 		{"", "empty pattern"},
 		{"A=B /", "at offset 0: invalid method"},
 		{" ", "at offset 1: host/path missing /"},
+		{"/{w}x", "at offset 1: bad wildcard segment"},
+		{"/x{w}", "at offset 1: bad wildcard segment"},
+		{"/{wx", "at offset 1: bad wildcard segment"},
+		{"/a/{/}/c", "at offset 3: bad wildcard segment"},
+		{"/a/{%61}/c", "at offset 3: bad wildcard name"}, // wildcard names aren't unescaped
+		{"/{a$}", "at offset 1: bad wildcard name"},
+		{"/{}", "at offset 1: empty wildcard"},
+		{"POST a.com/x/{}/y", "at offset 13: empty wildcard"},
+		{"/{...}", "at offset 1: empty wildcard"},
+		{"/{$...}", "at offset 1: bad wildcard"},
+		{"/{$}/", "at offset 1: {$} not at end"},
+		{"/{$}/x", "at offset 1: {$} not at end"},
+		{"/abc/{$}/x", "at offset 5: {$} not at end"},
+		{"/{a...}/", "at offset 1: {...} wildcard not at end"},
+		{"/{a...}/x", "at offset 1: {...} wildcard not at end"},
 		{"{a}/b", "at offset 0: host contains '{' (missing initial '/'?)"},
+		{"/a/{x}/b/{x...}", "at offset 9: duplicate wildcard name"},
 		{"GET //", "at offset 4: non-CONNECT pattern with unclean path"},
 	} {
 		_, err := parsePattern(test.in)
